@@ -14,15 +14,21 @@ import (
 )
 
 func main() {
-	ctx := kong.Parse(&Interface{})
+	ctx := kong.Parse(&Interface{},
+		kong.Name("fargate-calculator"),
+		kong.Description("Calculate Fargate cost for Kubernetes workload."),
+		kong.UsageOnError(),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact: true,
+			Summary: false,
+		}))
 
 	err := ctx.Run()
 	ctx.FatalIfErrorf(err)
 }
 
 type Interface struct {
-	Namespaces        string             `name:"namespace" help:"Namespace to estimate." default:""`
-	AllNamespaces     bool               `name:"all-namespaces" help:"Whether to estimate all namespaces" default:"false"`
+	Namespace         string             `name:"namespace" help:"Namespace selector (optional)" default:""`
 	FargateCPUHour    float64            `name:"fargate-cpu-hour" help:"Price of Fargate CPU per Hour" default:"0.04656"`
 	FargateMemoryHour float64            `name:"fargate-memory-hour" help:"Price of Fargate Memory per Hour" default:"0.00511"`
 	Ec2InstanceHour   map[string]float64 `name:"ec2-instance-hour" help:"Hourly prices of instance types (comma-separated), e.g. c5.xlarge=0.194" default:"c5.xlarge=0.194"`
@@ -38,8 +44,7 @@ func (cmd *Interface) Run() error {
 	ctx := context.TODO()
 
 	clientSet, err := getClientSet()
-
-	podList, err := clientSet.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
+	podList, err := clientSet.CoreV1().Pods(cmd.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
