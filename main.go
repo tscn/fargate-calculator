@@ -29,6 +29,7 @@ func main() {
 
 type Interface struct {
 	Namespace         string             `name:"namespace" help:"Namespace selector (optional)" default:""`
+	UseRequestsOnly   bool               `name:"use-requests-only" help:"If set to true, calculator will only use requests and not limits." default:"false"`
 	FargateCPUHour    float64            `name:"fargate-cpu-hour" help:"Price of Fargate CPU per Hour" default:"0.04656"`
 	FargateMemoryHour float64            `name:"fargate-memory-hour" help:"Price of Fargate Memory per Hour" default:"0.00511"`
 	Ec2InstanceHour   map[string]float64 `name:"ec2-instance-hour" help:"Hourly prices of instance types (comma-separated), e.g. c5.xlarge=0.194" default:"c5.xlarge=0.194"`
@@ -77,7 +78,7 @@ func (cmd *Interface) Run() error {
 			if cmd.ExcludeIstioProxy && container.Name == "istio-proxy" {
 				continue
 			}
-			if container.Resources.Limits.Cpu().IsZero() {
+			if container.Resources.Limits.Cpu().IsZero() || cmd.UseRequestsOnly {
 				if !container.Resources.Requests.Cpu().IsZero() {
 					podCpu.Add(*container.Resources.Requests.Cpu())
 				}
@@ -85,7 +86,7 @@ func (cmd *Interface) Run() error {
 				podCpu.Add(*container.Resources.Limits.Cpu())
 			}
 
-			if container.Resources.Limits.Memory().IsZero() {
+			if container.Resources.Limits.Memory().IsZero() || cmd.UseRequestsOnly {
 				if !container.Resources.Requests.Memory().IsZero() {
 					podMemory.Add(*container.Resources.Requests.Memory())
 				}
@@ -121,7 +122,7 @@ func (cmd *Interface) Run() error {
 		}
 	}
 
-	log.Infof("Total Fargate price for pods: %f", fargateTotalPrice)
+	log.Infof("Total Fargate price/h for pods: %f", fargateTotalPrice)
 
 	nodeList, err := clientSet.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -131,6 +132,7 @@ func (cmd *Interface) Run() error {
 
 	var ec2Price float64
 
+	var fargateEquivalent float64
 	for _, node := range nodeList.Items {
 		if instanceType, ok := node.Labels["node.kubernetes.io/instance-type"]; ok {
 			if price, ok := cmd.Ec2InstanceHour[instanceType]; ok {
@@ -141,9 +143,12 @@ func (cmd *Interface) Run() error {
 		} else {
 			log.Warnf("Cannot determine instance type for node %s", node.Name)
 		}
+		fargateEquivalent += float64(node.Status.Allocatable.Cpu().ScaledValue(resource.Milli)) / 1000 * cmd.FargateCPUHour
+		fargateEquivalent += float64(node.Status.Allocatable.Memory().ScaledValue(resource.Mega)) / 1024 * cmd.FargateMemoryHour
 	}
 
-	log.Infof("Total EC2 hour price for nodes: %v", ec2Price)
+	log.Infof("Total EC2 price/h for nodes: %v", ec2Price)
+	log.Infof("Fargate price/h for equivalent allocatable ressources: %v", fargateEquivalent)
 	return nil
 }
 
