@@ -28,14 +28,15 @@ func main() {
 }
 
 type Interface struct {
-	Namespace         string             `name:"namespace" help:"Namespace selector (optional)" default:""`
-	UseRequestsOnly   bool               `name:"use-requests-only" help:"If set to true, calculator will only use requests and not limits." default:"false"`
-	FargateCPUHour    float64            `name:"fargate-cpu-hour" help:"Price of Fargate CPU per Hour" default:"0.04656"`
-	FargateMemoryHour float64            `name:"fargate-memory-hour" help:"Price of Fargate Memory per Hour" default:"0.00511"`
-	Ec2InstanceHour   map[string]float64 `name:"ec2-instance-hour" help:"Hourly prices of instance types (comma-separated), e.g. c5.xlarge=0.194" default:"c5.xlarge=0.194"`
-	ExcludeDaemonSets bool               `name:"exclude-daemonsets" help:"Exclude Pods owned by DaemonSets (as not supported in Fargate)." default:"true"`
-	ExcludeIstioProxy bool               `name:"exclude-istio-proxy" help:"Exclude istio-proxy containers (as not supported in Fargate)." default:"true"`
-	Debug             bool               `name:"debug" help:"Enable debug logging."`
+	Namespace          string             `name:"namespace" help:"Namespace selector (optional)" default:""`
+	UseRequestsOnly    bool               `name:"use-requests-only" help:"If set to true, calculator will only use requests and not limits." default:"false"`
+	AssumeOptimization bool               `name:"assume-request-optimization" help:"Enabling this option will make calculator expect that requests would be adjusted down to meet Fargate pod config values." default:"false"`
+	FargateCPUHour     float64            `name:"fargate-cpu-hour" help:"Price of Fargate CPU per Hour" default:"0.04656"`
+	FargateMemoryHour  float64            `name:"fargate-memory-hour" help:"Price of Fargate Memory per Hour" default:"0.00511"`
+	Ec2InstanceHour    map[string]float64 `name:"ec2-instance-hour" help:"Hourly prices of instance types (comma-separated), e.g. c5.xlarge=0.194" default:"c5.xlarge=0.194"`
+	ExcludeDaemonSets  bool               `name:"exclude-daemonsets" help:"Exclude Pods owned by DaemonSets (as not supported in Fargate)." default:"true"`
+	ExcludeIstioProxy  bool               `name:"exclude-istio-proxy" help:"Exclude istio-proxy containers (as not supported in Fargate)." default:"true"`
+	Debug              bool               `name:"debug" help:"Enable debug logging."`
 }
 
 func (cmd *Interface) Run() error {
@@ -97,6 +98,21 @@ func (cmd *Interface) Run() error {
 
 		podMemory.Add(*resource.NewScaledQuantity(250, resource.Mega))
 		//log.Debugf("Caluclated pod %s/%s with %vm CPU and %vMi memory.", pod.Namespace, pod.Name, podCpu.ScaledValue(resource.Milli), podMemory.ScaledValue(resource.Mega))
+
+		if cmd.AssumeOptimization {
+			if podCpu.ScaledValue(resource.Milli) > 1500 {
+				podCpu.Sub(*resource.NewScaledQuantity(1000, resource.Milli))
+			} else if podCpu.ScaledValue(resource.Milli) > 750 {
+				podCpu.Sub(*resource.NewScaledQuantity(500, resource.Milli))
+			} else {
+				podCpu.Sub(*resource.NewScaledQuantity(250, resource.Milli))
+			}
+			if podMemory.ScaledValue(resource.Mega) > 1536 {
+				podMemory.Sub(*resource.NewScaledQuantity(1024, resource.Mega))
+			} else {
+				podMemory.Sub(*resource.NewScaledQuantity(512, resource.Mega))
+			}
+		}
 
 		var match = false
 		for _, cpuOption := range getFargateMillis() {
