@@ -99,9 +99,9 @@ func (cmd *Interface) Run() error {
 
 		var match = false
 		for _, cpuOption := range getFargateMillis() {
-			if podCpu.IsZero() || cpuOption > podCpu.ScaledValue(resource.Milli) {
+			if podCpu.IsZero() || cpuOption >= podCpu.ScaledValue(resource.Milli) {
 				for _, memoryOption := range fargateMegaPerMillis[cpuOption] {
-					if memoryOption > podMemory.ScaledValue(resource.Mega) {
+					if memoryOption >= podMemory.ScaledValue(resource.Mega) {
 						match = true
 						var fargatePrice = (float64(cpuOption) / 1000 * cmd.FargateCPUHour) + (float64(memoryOption) / 1024 * cmd.FargateMemoryHour)
 						log.Infof("Resolved Fargate configuration %v CPU and %v Memory for Pod %s/%s (%vm / %vMi) with hourly price: %v$", float64(cpuOption)/1000, float64(memoryOption)/1024, pod.Namespace, pod.Name, podCpu.ScaledValue(resource.Milli), podMemory.ScaledValue(resource.Mega), fargatePrice)
